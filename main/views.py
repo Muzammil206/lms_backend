@@ -18,7 +18,6 @@ from .encrypt_utils import encrypt, decrypt
 from django.utils.crypto import get_random_string
 import random
 from .utils import *
-import openai
 import string
 from django.http import FileResponse
 from django.core.files.base import ContentFile

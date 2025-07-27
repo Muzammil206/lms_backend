@@ -12,9 +12,9 @@ router.get('/:id', courseController.getCourse);
 router.use(protect);
 
 // Instructor-only routes
-router.use(authorize('instructor'));
+// router.use(authorize('admin'));
 
-router.post('/', courseController.createCourse);
+router.post('/', courseController.createCourseWithModules);
 router.put('/:id', courseController.updateCourse);
 router.delete('/:id', courseController.deleteCourse);
 router.post('/:id/materials', courseController.addMaterial);

@@ -134,12 +134,36 @@ exports.getCourse = async (req, res, next) => {
   }
 };
 
-// @desc    Create course
+// @desc    Create course with modules and module contents
 // @route   POST /api/v1/courses
 // @access  Private (Admin)
-exports.createCourse = async (req, res, next) => {
+exports.createCourseWithModules = async (req, res, next) => {
+  const { 
+    title, 
+    description, 
+    category_id, 
+    slug,
+    summary,
+    price,
+    discounted_price,
+    duration,
+    level,
+    thumbnail_url,
+    instructor_name,
+    is_published = false,
+    modules = [] 
+  } = req.body;
+
+  // Validate input
+  if (!title || !description || !category_id || !price) {
+    return res.status(400).json({
+      success: false,
+      message: 'Title, description, category, and price are required'
+    });
+  }
+
   try {
-    // Check if user is an admin
+    // Check admin permission
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('role')
@@ -154,36 +178,96 @@ exports.createCourse = async (req, res, next) => {
       });
     }
 
-    // Validate request body
-    const { title, description, category_id } = req.body;
-    if (!title || !description || !category_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Title, description and category are required'
-      });
-    }
-
-    // Create course
-    const { data: course, error } = await supabase
+    // Insert course
+    const { data: course, error: courseError } = await supabase
       .from('courses')
       .insert({
-        ...req.body,
-        instructor_name: req.body.instructor_name || 'LMS Instructor'
+        title,
+        description,
+        category_id,
+        slug,
+        summary,
+        price,
+        discounted_price,
+        duration,
+        level,
+        thumbnail_url,
+        instructor_name,
+        is_published
       })
-      .select(`
-        *,
-        category:course_categories (name, slug)
-      `)
+      .select()
       .single();
 
-    if (error) throw error;
+    if (courseError) throw courseError;
+
+    // Process modules
+    const processedModules = await Promise.all(modules.map(async (module, index) => {
+      // Insert module
+      const { data: insertedModule, error: moduleError } = await supabase
+        .from('modules')
+        .insert({
+          course_id: course.id,
+          title: module.title,
+          description: module.description,
+          position: index + 1,
+          is_published: module.is_published || false
+        })
+        .select()
+        .single();
+
+      if (moduleError) throw moduleError;
+
+      // Process module contents
+      if (module.contents && module.contents.length > 0) {
+        const moduleContents = module.contents.map((content, contentIndex) => ({
+          module_id: insertedModule.id,
+          content_type: content.content_type,
+          title: content.title,
+          description: content.description,
+          position: contentIndex + 1,
+          is_published: content.is_published || false,
+          video_url: content.video_url // Added video_url directly to module_contents
+        }));
+
+        const { data: insertedContents, error: contentError } = await supabase
+          .from('module_contents')
+          .insert(moduleContents)
+          .select();
+
+        if (contentError) throw contentError;
+
+        // Optional: Handle additional content type specifics if needed
+        await Promise.all(insertedContents.map(async (content) => {
+          switch (content.content_type) {
+            case 'video':
+              // If you have additional video-specific fields in content_videos
+              await supabase
+                .from('content_videos')
+                .insert({
+                  content_id: content.id,
+                  video_url: content.video_url,
+                  // Add other video-specific fields if you have them
+                  duration: content.duration,
+                  thumbnail_url: content.thumbnail_url
+                });
+              break;
+            // Add other content type handling as needed
+          }
+        }));
+      }
+
+      return insertedModule;
+    }));
 
     res.status(201).json({
       success: true,
-      data: course
+      data: {
+        course,
+        modules: processedModules
+      }
     });
   } catch (err) {
-    winston.error('Error creating course:', err);
+    winston.error('Error creating course with modules:', err);
     next(err);
   }
 };
